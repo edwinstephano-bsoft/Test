@@ -5,17 +5,26 @@ set -Eeuo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH_DIR="$(cd "$REPO_DIR/../.." && pwd)"
 
-# Verify bench environment
-ENV_PY="$BENCH_DIR/env/bin/python"
-PIP="$BENCH_DIR/env/bin/pip"
-APPS_FILE="$BENCH_DIR/sites/apps.txt"
-APPS_JSON="$BENCH_DIR/sites/apps.json"
-
-if [[ ! -x "$ENV_PY" || ! -x "$PIP" ]]; then
+# Verify bench environment (Supports Linux, macOS, and Windows/WSL)
+if [[ -x "$BENCH_DIR/env/bin/python" ]]; then
+    ENV_PY="$BENCH_DIR/env/bin/python"
+    PIP="$BENCH_DIR/env/bin/pip"
+elif [[ -x "$BENCH_DIR/env/Scripts/python.exe" ]]; then
+    ENV_PY="$BENCH_DIR/env/Scripts/python.exe"
+    PIP="$BENCH_DIR/env/Scripts/pip.exe"
+else
     echo "❌ ERROR: Cannot find bench virtualenv at $BENCH_DIR/env"
     echo "Please ensure this repository is cloned inside a Frappe bench 'apps/' directory."
     exit 1
 fi
+
+APPS_FILE="$BENCH_DIR/sites/apps.txt"
+APPS_JSON="$BENCH_DIR/sites/apps.json"
+
+# Cross-platform realpath resolver (works on macOS BSD and Linux GNU)
+resolve_path() {
+    "$ENV_PY" -c "import os, sys; print(os.path.realpath(sys.argv[1]))" "$1"
+}
 
 mkdir -p "$BENCH_DIR/apps"
 touch "$APPS_FILE"
@@ -70,8 +79,8 @@ for APP_DIR in "${candidate_dirs[@]}"; do
 
     # 1. Symlink to bench/apps/
     if [[ -L "$TARGET" ]]; then
-        current_target="$(readlink -f "$TARGET")"
-        expected_target="$(readlink -f "$APP_DIR")"
+        current_target="$(resolve_path "$TARGET")"
+        expected_target="$(resolve_path "$APP_DIR")"
         if [[ "$current_target" != "$expected_target" ]]; then
             echo "   ⚠️  Updating symlink $TARGET -> $APP_DIR"
             rm -f "$TARGET"
@@ -80,7 +89,7 @@ for APP_DIR in "${candidate_dirs[@]}"; do
             echo "   ✓ Symlink already points to $APP_DIR"
         fi
     elif [[ -e "$TARGET" ]]; then
-        if [[ "$(readlink -f "$TARGET")" == "$(readlink -f "$APP_DIR")" ]]; then
+        if [[ "$(resolve_path "$TARGET")" == "$(resolve_path "$APP_DIR")" ]]; then
             echo "   ✓ Target directory matches $APP_DIR"
         else
             echo "   ❌ ERROR: $TARGET already exists and is not a symlink to $APP_DIR"
